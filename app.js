@@ -147,12 +147,13 @@ async function speakItalian(text, button) {
       }
 
       const italianVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("it"));
-      const preferredVoice = italianVoices.find((voice) => /natural|enhanced|premium/i.test(voice.name))
+      const preferredVoice = italianVoices.find((voice) => /alice|federica|paola|lucia|serena|sofia|vittoria|bianca|elsa|francesca/i.test(voice.name))
+        || italianVoices.find((voice) => /natural|enhanced|premium/i.test(voice.name))
         || italianVoices[0];
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "it-IT";
       utterance.rate = 0.9;
-      utterance.pitch = 1;
+      utterance.pitch = 1.06;
       if (preferredVoice) utterance.voice = preferredVoice;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);

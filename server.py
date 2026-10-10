@@ -128,8 +128,9 @@ class AppHandler(SimpleHTTPRequestHandler):
             "voice": "coral",
             "input": text,
             "instructions": (
-                "Speak in Italian with clear, natural pronunciation and a warm, "
-                "friendly tone. Use an unhurried conversational pace suitable "
+                "Use a warm, friendly adult woman's voice. Speak Italian with a "
+                "natural native Italian accent, clear pronunciation, and a gentle, "
+                "encouraging tone. Keep an unhurried conversational pace suitable "
                 "for an Italian language learner."
             ),
             "response_format": "mp3",
