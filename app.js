@@ -35,7 +35,7 @@ const answerList = document.querySelector("#answerList");
 const feedback = document.querySelector("#feedback");
 const isLocalApp = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const speechApiBaseUrl = window.PARLA_SPEECH_API_URL
-  || (isLocalApp ? "" : "https://fenicia-italian-guide-speech.onrender.com");
+  || (isLocalApp ? "" : null);
 const nextButton = document.querySelector("#nextStep");
 const stepCount = document.querySelector("#stepCount");
 const stepProgress = document.querySelector("#stepProgress");
@@ -109,6 +109,7 @@ function closePractice() {
 async function speakItalian(text, button) {
   button.disabled = true;
   try {
+    if (speechApiBaseUrl === null) throw new Error("Hosted speech is not configured.");
     const response = await fetch(`${speechApiBaseUrl}/api/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -150,21 +151,26 @@ async function speakItalian(text, button) {
       }
 
       const italianVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith("it"));
-      const preferredVoice = italianVoices.find((voice) => /alice|federica|paola|lucia|serena|sofia|vittoria|bianca|elsa|francesca/i.test(voice.name))
+      if (italianVoices.length === 0) {
+        showToast("No Italian voice is installed in this browser. Add one in your device’s language settings.");
+        return;
+      }
+      const preferredVoiceNames = ["flo", "shelley", "sandy", "federica", "paola", "serena", "sofia", "vittoria", "bianca", "elsa", "francesca", "alice", "lucia"];
+      const preferredVoice = preferredVoiceNames
+        .map((name) => italianVoices.find((voice) => voice.name.toLowerCase().includes(name)))
+        .find(Boolean)
         || italianVoices.find((voice) => /natural|enhanced|premium/i.test(voice.name))
         || italianVoices[0];
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "it-IT";
       utterance.rate = 0.9;
       utterance.pitch = 1.06;
-      if (preferredVoice) utterance.voice = preferredVoice;
+      utterance.voice = preferredVoice;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
-      showToast(/quota|billing/i.test(error.message)
-        ? "Nova is unavailable; check OpenAI billing and usage."
-        : "Nova is unavailable; using your device’s Italian voice.");
-    } catch {
-      showToast(`Speech unavailable: ${error.message}`);
+      showToast(`Using ${preferredVoice.name} for Italian.`);
+    } catch (speechError) {
+      showToast(`Speech unavailable: ${speechError.message}`);
     }
   } finally {
     button.disabled = false;
