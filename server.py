@@ -2,9 +2,12 @@ import json
 import os
 import ssl
 import sys
+import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
@@ -12,6 +15,20 @@ APP_DIR = Path(__file__).resolve().parent
 OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 MAX_REQUEST_BYTES = 8_192
 MAX_TEXT_LENGTH = 500
+RATE_LIMIT_WINDOW_SECONDS = 60
+MAX_SPEECH_REQUESTS_PER_WINDOW = 10
+ALLOWED_ORIGINS = {
+    "https://57rppwfdm9-cell.github.io",
+}
+speech_request_times = {}
+speech_request_times_lock = threading.Lock()
+
+
+def is_allowed_origin(origin):
+    if origin in ALLOWED_ORIGINS:
+        return True
+    parsed_origin = urlparse(origin or "")
+    return parsed_origin.scheme == "http" and parsed_origin.hostname in {"localhost", "127.0.0.1"}
 
 
 def create_ssl_context():
@@ -90,9 +107,32 @@ class AppHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(APP_DIR), **kwargs)
 
+    def end_headers(self):
+        origin = self.headers.get("Origin")
+        if is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        if self.path != "/api/speech":
+            self.send_json(404, {"error": "Endpoint not found."})
+            return
+        if not is_allowed_origin(self.headers.get("Origin")):
+            self.send_json(403, {"error": "Origin is not allowed."})
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
+
     def do_POST(self):
         if self.path != "/api/speech":
             self.send_json(404, {"error": "Endpoint not found."})
+            return
+        if not is_allowed_origin(self.headers.get("Origin")):
+            self.send_json(403, {"error": "Origin is not allowed."})
             return
 
         try:
@@ -123,18 +163,34 @@ class AppHandler(SimpleHTTPRequestHandler):
             self.send_json(503, {"error": "Set OPENAI_API_KEY in the server environment to enable natural speech."})
             return
 
+        now = time.monotonic()
+        client_ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",", 1)[0].strip()
+        with speech_request_times_lock:
+            recent_requests = [
+                requested_at
+                for requested_at in speech_request_times.get(client_ip, [])
+                if now - requested_at < RATE_LIMIT_WINDOW_SECONDS
+            ]
+            if len(recent_requests) >= MAX_SPEECH_REQUESTS_PER_WINDOW:
+                speech_request_times[client_ip] = recent_requests
+                self.send_json(429, {"error": "Speech request limit reached. Please wait a minute and try again."})
+                return
+            recent_requests.append(now)
+            speech_request_times[client_ip] = recent_requests
+
         payload = json.dumps({
             "model": "gpt-4o-mini-tts",
-            "voice": "coral",
+            "voice": "nova",
             "input": text,
             "instructions": (
-                "Use a warm, friendly adult woman's voice. Speak Italian with a "
-                "natural native Italian accent, clear pronunciation, and a gentle, "
-                "encouraging tone. Keep an unhurried conversational pace suitable "
-                "for an Italian language learner."
+                "Use a warm, friendly, expressive adult woman's voice, with a "
+                "welcoming smile in the tone. Speak Italian with a natural native "
+                "Italian accent, clear pronunciation, and a gentle, encouraging "
+                "tone. Keep an unhurried conversational pace suitable for an "
+                "Italian language learner."
             ),
             "response_format": "mp3",
-            "speed": 0.9,
+            "speed": 0.92,
         }).encode("utf-8")
         request = Request(
             OPENAI_SPEECH_URL,
@@ -184,8 +240,8 @@ class AppHandler(SimpleHTTPRequestHandler):
 def main():
     load_local_env()
     port = int(os.environ.get("PORT", "8000"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), AppHandler)
-    print(f"Parla is running at http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer(("0.0.0.0", port), AppHandler)
+    print(f"Parla is running on port {port}")
     print("Natural speech is enabled." if os.environ.get("OPENAI_API_KEY") else
           "Set OPENAI_API_KEY in this environment to enable natural speech.")
     try:

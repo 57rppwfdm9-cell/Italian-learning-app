@@ -33,6 +33,9 @@ const promptText = document.querySelector("#italianPrompt");
 const translation = document.querySelector("#translation");
 const answerList = document.querySelector("#answerList");
 const feedback = document.querySelector("#feedback");
+const isLocalApp = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const speechApiBaseUrl = window.PARLA_SPEECH_API_URL
+  || (isLocalApp ? "" : "https://fenicia-italian-guide-speech.onrender.com");
 const nextButton = document.querySelector("#nextStep");
 const stepCount = document.querySelector("#stepCount");
 const stepProgress = document.querySelector("#stepProgress");
@@ -106,7 +109,7 @@ function closePractice() {
 async function speakItalian(text, button) {
   button.disabled = true;
   try {
-    const response = await fetch("/api/speech", {
+    const response = await fetch(`${speechApiBaseUrl}/api/speech`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -157,7 +160,9 @@ async function speakItalian(text, button) {
       if (preferredVoice) utterance.voice = preferredVoice;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
-      showToast("OpenAI voice unavailable; using your device’s Italian voice.");
+      showToast(/quota|billing/i.test(error.message)
+        ? "Nova is unavailable; check OpenAI billing and usage."
+        : "Nova is unavailable; using your device’s Italian voice.");
     } catch {
       showToast(`Speech unavailable: ${error.message}`);
     }
